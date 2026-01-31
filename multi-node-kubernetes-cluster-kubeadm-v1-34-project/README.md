@@ -1,11 +1,7 @@
 # Multi-Node Kubernetes Cluster with Kubeadm 1.34 (containerd)
 
 ## For more projects, check out  
-[https://harishnshetty.github.io/projects.html](https://harishnshetty.github.io/projects.html)
-
-[![Video Tutorial](https://github.com/harishnshetty/image-data-project/blob/22ed0e06accf2365a14a6e0a704044c93e16461c/kubeadm0.jpg)](https://youtu.be/u4zcPLI-tMs)
-
-[![Channel Link](https://github.com/harishnshetty/image-data-project/blob/22ed0e06accf2365a14a6e0a704044c93e16461c/kubeadm2.jpg)](https://youtu.be/u4zcPLI-tMs)
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/5c03eb3e-9ec6-4e48-b5f6-662c017d4440" />
 
 
 
@@ -331,4 +327,5 @@ sudo kubeadm reset -f
 sudo rm -rf ~/.kube
 # Retry init
 sudo kubeadm init --pod-network-cidr=192.168.0.0/16 --apiserver-advertise-address=[IP_ADDRESS] --node-name controlplane
+
 ```
