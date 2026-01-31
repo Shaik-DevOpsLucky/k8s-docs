@@ -1,14 +1,7 @@
 # Multi-Node Kubernetes Cluster with Kubeadm 1.34 (containerd)
 
-## For more projects, check out  
+## Architecture 
 <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/5c03eb3e-9ec6-4e48-b5f6-662c017d4440" />
-
-
-
-
-sudo hostnamectl set-hostname master
-exec bash
-
 
 
 https://kubernetes.io/docs/reference/networking/ports-and-protocols/
@@ -41,34 +34,73 @@ https://kubernetes.io/docs/reference/networking/ports-and-protocols/
 <img width="1240" height="675" alt="image" src="https://github.com/user-attachments/assets/3906e1bb-0015-4973-9a7f-7837b6864478" />
 
 
-### Run the below steps on the Master VM
-1) SSH into the Master EC2 server
+---
 
-### System Update & Base Packages
+# **Clean Latest Kubernetes Multi-Node Setup (Kubeadm + Calico)**
+
+**Target:** Ubuntu 22.04, Kubernetes 1.35+, containerd runtime, Calico CNI.
+
+---
+
+## **Step 0: Prerequisites (AWS)**
+
+**EC2 instances:**
+
+| Node          | IP (Private) | Hostname     | Role   |
+| ------------- | ------------ | ------------ | ------ |
+| Control Plane | 172.31.43.1  | controlplane | Master |
+| Worker 1      | 172.31.43.11 | worker1      | Worker |
+| Worker 2      | 172.31.43.12 | worker2      | Worker |
+
+**Security groups:**
+
+* **Master SG**: allow **6443, 2379-2380, 10250, 10257, 10259, 22** from VPC or your IP.
+* **Worker SG**: allow **10250, 10256, NodePort 30000-32767, 22** from VPC.
+* Allow **TCP 179** between all nodes (for Calico BGP).
+
+> Make sure **source/destination checks are disabled** on EC2 instances (important for Calico).
+
+---
+
+## **Step 1: Set Hostnames**
+
+**Run on all nodes BEFORE kubeadm install:**
+
+```bash
+sudo hostnamectl set-hostname controlplane   # Master
+sudo hostnamectl set-hostname worker1        # Worker1
+sudo hostnamectl set-hostname worker2        # Worker2
+```
+
+**Update /etc/hosts on all nodes:**
+
+```text
+172.31.43.1   controlplane
+172.31.43.11  worker1
+172.31.43.12  worker2
+```
+
+---
+
+## **Step 2: Update System & Install Dependencies**
+
+**All nodes:**
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt-get install -y apt-transport-https ca-certificates curl gpg ncdu net-tools 
+sudo apt install -y apt-transport-https ca-certificates curl gnupg lsb-release net-tools
 ```
 
+---
 
-2)  Disable Swap using the below commands
-```bash
-swapoff -a
-sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
-```
+## **Step 3: Disable Swap and Configure Kernel**
 
-Verify:
+**All nodes:**
 
 ```bash
-free -h
-```
+sudo swapoff -a
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
 
-
-3) Forwarding IPv4 and letting iptables see bridged traffic
-
-
-```bash
 cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
 overlay
 br_netfilter
@@ -77,187 +109,87 @@ EOF
 sudo modprobe overlay
 sudo modprobe br_netfilter
 
-
-# Verify that the br_netfilter, overlay modules are loaded by running the following commands:
-
-lsmod | grep br_netfilter
-lsmod | grep overlay
-
-# sysctl params required by setup, params persist across reboots
 cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward                 = 1
 EOF
 
-
-
-# Apply sysctl params without reboot
 sudo sysctl --system
+```
 
-# Verify that the br_netfilter, overlay modules are loaded by running the following commands:
+**Verify:**
+
+```bash
 lsmod | grep br_netfilter
 lsmod | grep overlay
-
-
-# Verify that the net.bridge.bridge-nf-call-iptables, net.bridge.bridge-nf-call-ip6tables, and net.ipv4.ip_forward system variables are set to 1 in your sysctl config by running the following command:
 sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward
 ```
 
+---
 
+## **Step 4: Install containerd**
 
-4) Install container runtime
-
-## containerd for specific version
-
-https://github.com/containerd/containerd/releases 
-
+**All nodes (clean method, latest stable):**
 
 ```bash
-curl -LO https://github.com/containerd/containerd/releases/download/v2.2.1/containerd-2.2.1-linux-amd64.tar.gz
-
-sudo tar Cxzvf /usr/local containerd-2.2.1-linux-amd64.tar.gz
-
-curl -LO https://raw.githubusercontent.com/containerd/containerd/main/containerd.service
-
-
-sudo mkdir -p /usr/local/lib/systemd/system/
-sudo mv containerd.service /usr/local/lib/systemd/system/
+sudo apt install -y containerd
 sudo mkdir -p /etc/containerd
-```
-## Auto configuration
-
-https://docs.docker.com/engine/install/ubuntu/
-
-```bash
-# Add Docker's official GPG key:
-sudo apt update
-sudo apt install ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-# Add the repository to Apt sources:
-sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
-Types: deb
-URIs: https://download.docker.com/linux/ubuntu
-Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
-Components: stable
-Signed-By: /etc/apt/keyrings/docker.asc
-EOF
-
-sudo apt update
-sudo apt install containerd.io
-```
-
-
-```bash
-containerd config default | sudo tee /etc/containerd/config.toml
-```
-
-```bash
-cat /etc/containerd/config.toml | grep -i SystemdCgroup
-
-sudo sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
-
-sudo sed -i "/\[plugins\.'io\.containerd\.grpc\.v1\.cri'\]/a\    sandbox_image = 'registry.k8s.io/pause:3.10'" /etc/containerd/config.toml
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl start containerd
-sudo systemctl enable --now containerd
+sudo containerd config default | sudo tee /etc/containerd/config.toml
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
 sudo systemctl restart containerd
-
-# Check that containerd service is up and running
-systemctl status containerd
+sudo systemctl enable containerd
 ```
-Verify:
+
+**Verify:**
 
 ```bash
 containerd --version
+sudo systemctl status containerd
 ```
 
-5) Install runc
+---
 
-https://github.com/opencontainers/runc/releases
+## **Step 5: Install Kubernetes (kubeadm, kubelet, kubectl)**
 
-```bash
-curl -LO https://github.com/opencontainers/runc/releases/download/v1.4.0/runc.amd64
-
-sudo install -m 755 runc.amd64 /usr/local/sbin/runc
-```
-
-
-6) install cni plugin
-
-https://github.com/containernetworking/plugins/
+**All nodes:**
 
 ```bash
-curl -LO https://github.com/containernetworking/plugins/releases/download/v1.9.0/cni-plugins-linux-amd64-v1.9.0.tgz
-sudo mkdir -p /opt/cni/bin
-sudo tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.9.0.tgz
-```
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.35/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.35/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
 
-
-7) Install kubeadm, kubelet and kubectl
-
-
-### Add Kubernetes repo (new official method)
-https://v1-34.docs.kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
-
-
-```bash
-sudo apt-get update
-sudo apt-get install -y apt-transport-https ca-certificates curl gpg
-
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-
-sudo apt-get update
-sudo apt-cache madison kubeadm
-
-sudo apt-get install -y kubelet=1.34.3-1.1 kubeadm=1.34.3-1.1 kubectl=1.34.3-1.1 --allow-downgrades --allow-change-held-packages
+sudo apt update
+sudo apt install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl
-
 sudo systemctl enable --now kubelet
+```
 
+**Verify versions:**
+
+```bash
 kubeadm version
-kubelet --version
 kubectl version --client
+kubelet --version
 ```
 
+---
 
->Note: The reason we are installing 1.34, so that in one of the later task, we can upgrade the cluster to 1.35
+## **Step 6: Initialize Control Plane**
 
-8) Configure `crictl` to work with `containerd`
+**Master node ONLY:**
 
 ```bash
-sudo chmod 666 /run/containerd/containerd.sock
-
-sudo crictl config runtime-endpoint unix:///var/run/containerd/containerd.sock
-
-sudo crictl --runtime-endpoint=unix:///run/containerd/containerd.sock version
-
-crictl info
+sudo kubeadm init \
+  --apiserver-advertise-address=<MASTER-PRIVATE-IP> \
+  --pod-network-cidr=192.168.0.0/16 \
+  --cri-socket unix:///var/run/containerd/containerd.sock \
+  --node-name controlplane
 ```
 
-9) initialize control plane
+* Save the **`kubeadm join ...`** command output for workers.
 
-## calico setup  --> ip range is 192.168.0.0/16
-```bash
-sudo kubeadm init --pod-network-cidr=192.168.0.0/16 --apiserver-advertise-address=172.31.43.1 --cri-socket unix:///var/run/containerd/containerd.sock --node-name controlplane
-```
-## flannel setup or weavenet setup --> ip range is 10.244.0.0/16
-```bash
-sudo kubeadm init --pod-network-cidr=10.244.0.0/16 --apiserver-advertise-address=172.31.43.1 --cri-socket unix:///var/run/containerd/containerd.sock --node-name controlplane
-```
-
->Note: copy to the notepad that was generated after the init command completion, we will use that later.
-
-10) Prepare `kubeconfig`
+**Setup kubeconfig:**
 
 ```bash
 mkdir -p $HOME/.kube
@@ -265,63 +197,90 @@ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 ```
 
+---
 
+## **Step 7: Install Calico CNI**
 
-11) Install calico 
-
-## calico setup  --> ip range is 192.168.0.0/16
-https://docs.tigera.io/calico/latest/getting-started/kubernetes/self-managed-onprem/onpremises
+**Master ONLY:**
 
 ```bash
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.3/manifests/operator-crds.yaml
-
-
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.3/manifests/tigera-operator.yaml
-
-curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.31.3/manifests/custom-resources-bpf.yaml
-
-kubectl apply -f custom-resources-bpf.yaml
-
-watch kubectl get tigerastatus
+kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.3/manifests/calico.yaml
 ```
 
-Node should become:
+* Wait for all pods in `calico-system` namespace to become `Running`:
+
+```bash
+kubectl get pods -n calico-system -w
+```
+
+**If Calico fails**, check your interface:
+
+```bash
+kubectl set env daemonset/calico-node -n calico-system IP_AUTODETECTION_METHOD=interface=ens5
+kubectl delete pod -n calico-system -l k8s-app=calico-node
+```
+
+---
+
+## **Step 8: Join Worker Nodes**
+
+**On each worker node:**
+
+```bash
+sudo kubeadm join 172.31.43.1:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash>
+```
+
+**Verify on master:**
 
 ```bash
 kubectl get nodes
 ```
 
-## Allow Scheduling Pods on Control Plane (Single Node Only)
+Expected output:
+
+```
+NAME           STATUS   ROLES           AGE   VERSION
+controlplane   Ready    control-plane   5m    v1.35.x
+worker1        Ready    <none>          2m    v1.35.x
+worker2        Ready    <none>          2m    v1.35.x
+```
+
+---
+
+## **Step 9: Optional – Allow Scheduling on Master (Single Node Lab)**
+
+**Master ONLY:**
+
 ```bash
 kubectl taint nodes --all node-role.kubernetes.io/control-plane-
 ```
 
+---
 
+## **Step 10: Validation**
 
-## Validation
+**Master ONLY:**
 
-If all the above steps were completed, you should be able to run `kubectl get nodes` on the master node, and it should return all the 3 nodes in ready status.
+```bash
+kubectl get nodes
+kubectl get pods -A
+kubectl describe node worker1
+```
 
-Also, make sure all the pods are up and running by using the command as below:
-` kubectl get pods -A`
-
->If your Calico-node pods are not healthy, please perform the below steps:
-
-- Disabled source/destination checks for master and worker nodes too.
-- Configure Security group rules, Bidirectional, all hosts,TCP 179(Attach it to master and worker nodes)
-- Update the ds using the command:
-`kubectl set env daemonset/calico-node -n calico-system IP_AUTODETECTION_METHOD=interface=ens5`
-Where ens5 is your default interface, you can confirm by running `ifconfig` on all the machines
-- IP_AUTODETECTION_METHOD  is set to first-found to let Calico automatically select the appropriate interface on each node.
-- Wait for some time or delete the calico-node pods and it should be up and running.
-- If you are still facing the issue, you can follow the below workaround
-
-- Install Calico CNI addon using manifest instead of Operator and CR, and all calico pods will be up and running 
-`kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml`
-
-This is not the latest version of calico though(v.3.25). This deploys CNI in kube-system NS. 
+✅ All nodes should be `Ready` and Calico pods `Running`.
 
 ---
+
+### **Important Notes / Common Issues**
+
+1. **Do not mix multiple containerd installation methods** (manual tar vs apt). Stick to **apt install containerd**.
+2. **Use a single Calico version**: v3.31.x is latest and works with kube 1.35+.
+3. **Disable source/destination check** on EC2 instances (needed for Calico).
+4. **Security Groups** must allow **TCP 179** for BGP and all required Kubernetes ports.
+5. **Always set hostnames before `kubeadm init`**.
+
+---
+
 # Cleanup the failed attempt
 
 ```bash
@@ -331,5 +290,7 @@ sudo rm -rf ~/.kube
 sudo kubeadm init --pod-network-cidr=192.168.0.0/16 --apiserver-advertise-address=[IP_ADDRESS] --node-name controlplane
 
 ```
+# Prepared by:
+*Shaik Moulali*
 
 
