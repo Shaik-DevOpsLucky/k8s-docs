@@ -37,6 +37,8 @@ https://kubernetes.io/docs/reference/networking/ports-and-protocols/
 
 [![Worker Node Security Group](https://github.com/harishnshetty/image-data-project/blob/22ed0e06accf2365a14a6e0a704044c93e16461c/kubeadm4-worker-sg.png)](https://youtu.be/u4zcPLI-tMs)
 
+---
+<img width="1240" height="675" alt="image" src="https://github.com/user-attachments/assets/3906e1bb-0015-4973-9a7f-7837b6864478" />
 
 
 ### Run the below steps on the Master VM
@@ -329,3 +331,4 @@ sudo rm -rf ~/.kube
 sudo kubeadm init --pod-network-cidr=192.168.0.0/16 --apiserver-advertise-address=[IP_ADDRESS] --node-name controlplane
 
 ```
+
