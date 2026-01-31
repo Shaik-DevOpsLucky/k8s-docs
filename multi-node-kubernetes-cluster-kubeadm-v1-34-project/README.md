@@ -21,8 +21,8 @@ https://kubernetes.io/docs/reference/networking/ports-and-protocols/
 | TCP      | Inbound   | **10250**     | Kubelet API             | Control plane, self               |
 | TCP      | Inbound   | **10259**     | kube-scheduler          | Self                              |
 | TCP      | Inbound   | **10257**     | kube-controller-manager | Self                              |
+<img width="1626" height="603" alt="image" src="https://github.com/user-attachments/assets/17079c52-a196-473c-b553-d433216e0372" />
 
-[![Control Plane Security Group](https://github.com/harishnshetty/image-data-project/blob/22ed0e06accf2365a14a6e0a704044c93e16461c/kubeadm3-control-sg.png)](https://youtu.be/u4zcPLI-tMs)
 
 
 
@@ -35,7 +35,7 @@ https://kubernetes.io/docs/reference/networking/ports-and-protocols/
 | TCP      | Inbound   | **30000–32767** | NodePort Services | All                  |
 | UDP      | Inbound   | **30000–32767** | NodePort Services | All                  |
 
-[![Worker Node Security Group](https://github.com/harishnshetty/image-data-project/blob/22ed0e06accf2365a14a6e0a704044c93e16461c/kubeadm4-worker-sg.png)](https://youtu.be/u4zcPLI-tMs)
+<img width="1605" height="516" alt="image" src="https://github.com/user-attachments/assets/d27fd562-aae1-4a33-b1af-b9b799715fd9" />
 
 ---
 <img width="1240" height="675" alt="image" src="https://github.com/user-attachments/assets/3906e1bb-0015-4973-9a7f-7837b6864478" />
@@ -331,4 +331,5 @@ sudo rm -rf ~/.kube
 sudo kubeadm init --pod-network-cidr=192.168.0.0/16 --apiserver-advertise-address=[IP_ADDRESS] --node-name controlplane
 
 ```
+
 
